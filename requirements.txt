@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────
+# Nifty Pre-Market Briefing MVP — Phase 1 requirements
+# Python 3.12
+# ─────────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# Database ORM
+sqlalchemy==2.0.30
+
+# Environment variable loading
+python-dotenv==1.0.1
+
+# HTTP clients for data collection
+httpx==0.27.0
+requests==2.32.2
+
+# HTML and XML parsing
+beautifulsoup4==4.12.3
+lxml==5.2.2
+
+# RSS feed parsing
+feedparser==6.0.11
+
+# Data processing and ranking
+pandas==2.2.2
+
+# Task scheduling
+apscheduler==3.10.4
+
+# Telegram delivery
+python-telegram-bot==21.3
+
+# Pydantic (FastAPI uses this for request/response validation)
+pydantic==2.7.1
+pydantic-settings==2.3.0
+
+# Testing
+pytest==9.1.1
+pytest-asyncio==1.4.0

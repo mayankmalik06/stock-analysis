@@ -1,0 +1,45 @@
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Virtual environment ───────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Environment secrets ───────────────────────────────────────────
+.env
+# .env.example is intentionally NOT ignored — commit it to share the template
+
+# ── Database file ─────────────────────────────────────────────────
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# ── IDE / editor ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── pytest cache ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
