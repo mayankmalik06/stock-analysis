@@ -24,6 +24,7 @@ from app.config import settings
 from app.db import create_tables
 from app.schemas import HealthResponse
 from app.routers import collectors as collectors_router
+from app.routers import scoring as scoring_router
 
 # ── Logging ───────────────────────────────────────────────────────
 logging.basicConfig(
@@ -103,6 +104,9 @@ def root():
 
 # ── Milestone 2: Collector endpoints ─────────────────────────────
 app.include_router(collectors_router.router)
+
+# ── Milestone 3: Scoring endpoints ───────────────────────────────
+app.include_router(scoring_router.router)
 
 # ── Future routers (added in later milestones) ────────────────────
 # from app.routers import symbols, events, rankings, briefs

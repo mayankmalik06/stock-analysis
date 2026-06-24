@@ -39,6 +39,20 @@ a concise briefing before the market opens at 9:15 am IST.
 
 Scoring, AI, and Telegram delivery are coming in later milestones.
 
+**Milestone 3 — Scoring and Ranking:**
+
+| What | Status |
+|---|---|
+| Catalyst scoring — keyword-based impact classification (HIGH/MEDIUM/LOW) | Done |
+| Pre-open reaction scoring — gap%, indicative value adjustment | Done |
+| Liquidity scoring — avg daily traded value + F&O inclusion bonus | Done |
+| Technical context scoring — gap displacement proxy for key levels | Done |
+| Composite total score — 0.40×Catalyst + 0.25×Preopen + 0.20×Liquidity + 0.15×Technical | Done |
+| Watchlist buckets — A (≥70), B (50–69), C (<50) | Done |
+| daily_rankings table populated per run with full score breakdown | Done |
+| FastAPI endpoints: POST /scoring/run and GET /scoring/top | Done |
+| CLI script: python scripts/run_scoring.py | Done |
+
 ---
 
 ## Requirements
@@ -200,6 +214,53 @@ All three tests should pass.
 
 ---
 
+## Milestone 3 — Running the scoring engine
+
+Once you have loaded symbols and collected events/pre-open data, run scoring:
+
+```bash
+# Score today with the full Nifty 500 universe
+python scripts/run_scoring.py
+
+# Score a specific date
+python scripts/run_scoring.py --date 2026-06-25
+
+# Score Nifty 50 only
+python scripts/run_scoring.py --universe nifty_50
+
+# Show only A-grade results (total_score >= 70)
+python scripts/run_scoring.py --show-bucket A
+
+# Show only the top 10
+python scripts/run_scoring.py --top 10
+```
+
+Or via the API (with the server running):
+
+```bash
+# Trigger scoring run
+curl -X POST "http://localhost:8000/scoring/run?trade_date=2026-06-25&universe=nifty_500"
+
+# View top 20 results
+curl "http://localhost:8000/scoring/top?date=2026-06-25&limit=20"
+
+# View A-grade only
+curl "http://localhost:8000/scoring/top?date=2026-06-25&bucket=A"
+```
+
+Query daily_rankings directly in SQLite:
+
+```bash
+sqlite3 data/nifty_premarket.db
+SELECT rank, symbol, catalyst_score, preopen_score, liquidity_score, technical_score, total_score, watchlist_bucket
+FROM daily_rankings
+WHERE trade_date = '2026-06-25'
+ORDER BY rank
+LIMIT 20;
+```
+
+---
+
 ## How to stop the app
 
 Press `Ctrl + C` in the terminal where uvicorn is running.
@@ -309,7 +370,7 @@ See `.env.example` for the full list. Key variables:
 |---|---|---|
 | 1 — Foundation | Project structure, database, FastAPI skeleton | **Done** |
 | 2 — Source ingestion | NSE announcements, RSS, pre-open, universe | **Done** |
-| 3 — Ranking logic | Scoring engine, ranked shortlist | Pending |
+| 3 — Ranking logic | Scoring engine, ranked shortlist | **Done** |
 | 4 — AI layer | Event classifier, brief writer | Pending |
 | 5 — Delivery | Telegram, scheduler | Pending |
 | 6 — Hardening | Logging, retries, validation, tests | Pending |
