@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import create_tables
 from app.schemas import HealthResponse
+from app.routers import collectors as collectors_router
 
 # ── Logging ───────────────────────────────────────────────────────
 logging.basicConfig(
@@ -99,6 +100,9 @@ def root():
         "health": "/health",
         "docs": "/docs",
     }
+
+# ── Milestone 2: Collector endpoints ─────────────────────────────
+app.include_router(collectors_router.router)
 
 # ── Future routers (added in later milestones) ────────────────────
 # from app.routers import symbols, events, rankings, briefs

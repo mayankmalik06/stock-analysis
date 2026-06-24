@@ -61,6 +61,16 @@ class Symbol(Base):
     # Set to False when a stock is removed from Nifty 500
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # ── Universe membership flags ─────────────────────────────────
+    # True if this stock is a current Nifty 500 constituent
+    in_nifty_500: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # True if this stock is a current Nifty 50 constituent
+    in_nifty_50: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # True if this stock is in the user's custom watchlist (data/custom_watchlist.csv)
+    is_custom_watchlist: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # When this row was last updated
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()

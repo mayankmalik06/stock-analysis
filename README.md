@@ -10,7 +10,7 @@ a concise briefing before the market opens at 9:15 am IST.
 
 ---
 
-## What is built so far (Milestone 1)
+## What is built so far (Milestones 1 & 2)
 
 | What | Status |
 |---|---|
@@ -22,7 +22,22 @@ a concise briefing before the market opens at 9:15 am IST.
 | .env.example listing all required secrets | Done |
 | Stubs for collectors, services, agents, delivery, jobs | Done |
 
-Data collection, scoring, AI, and Telegram delivery are coming in later milestones.
+**Milestone 2 — Data Collectors:**
+
+| What | Status |
+|---|---|
+| symbols table extended with `in_nifty_500`, `in_nifty_50`, `is_custom_watchlist` flags | Done |
+| Nifty 500 universe loader (downloads live CSV from NSE) | Done |
+| NSE corporate announcements collector (JSON API) | Done |
+| NSE RSS / financial news feed collector | Done |
+| Pre-open market data collector with test mode | Done |
+| Universe helper — filter by nifty_500 / nifty_50 / custom_watchlist / all | Done |
+| Custom watchlist scaffold (`data/custom_watchlist.csv`) | Done |
+| FastAPI endpoints for all collectors (`/collectors/*`) | Done |
+| CLI scripts for all collectors (`scripts/`) | Done |
+| Safe SQLite migration script (`scripts/migrate_symbols.py`) | Done |
+
+Scoring, AI, and Telegram delivery are coming in later milestones.
 
 ---
 
@@ -230,7 +245,12 @@ nifty_premarket/
 │   └── test_health.py       ← Basic app verification tests
 │
 ├── scripts/
-│   └── init_db.py           ← One-time database setup script
+│   ├── init_db.py           ← One-time database setup script
+│   ├── migrate_symbols.py   ← Safe migration: adds universe flag columns
+│   ├── load_nifty500.py     ← Load Nifty 500 universe from NSE
+│   ├── run_rss.py           ← Run NSE RSS / news feed collector
+│   ├── run_announcements.py ← Run NSE corporate announcements collector
+│   └── run_preopen.py       ← Run pre-open collector (use --test flag)
 │
 ├── data/                    ← SQLite database lives here (not committed to git)
 │
@@ -288,7 +308,7 @@ See `.env.example` for the full list. Key variables:
 | Milestone | What | Status |
 |---|---|---|
 | 1 — Foundation | Project structure, database, FastAPI skeleton | **Done** |
-| 2 — Source ingestion | NSE announcements, RSS, pre-open, universe | Pending |
+| 2 — Source ingestion | NSE announcements, RSS, pre-open, universe | **Done** |
 | 3 — Ranking logic | Scoring engine, ranked shortlist | Pending |
 | 4 — AI layer | Event classifier, brief writer | Pending |
 | 5 — Delivery | Telegram, scheduler | Pending |
