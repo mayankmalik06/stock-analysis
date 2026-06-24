@@ -3,29 +3,33 @@ app/services/ranking.py
 
 Full scoring and ranking pipeline for the Nifty Pre-Market Briefing system.
 
-MILESTONE: 3 (Scoring and Ranking)
-STATUS: Implemented
+MILESTONE: 3.5 (Daily OHLC Levels + Improved Technical Scoring)
+STATUS: Updated
+
+Changes from Milestone 3:
+- Added _get_levels_for_symbol() to look up daily_levels rows.
+- run_scoring() now fetches levels per symbol and passes them to
+  compute_technical_score() so the improved scorer can run.
+- If no levels exist for a symbol+date, Technical falls back gracefully
+  to the gap%-based proxy — no crashes, no missing scores.
 
 This module:
 1. Pulls active symbols from the database (filtered by universe flag).
 2. For each symbol, pulls events in the configured time window.
 3. For each symbol, pulls pre-open snapshots for the given session date.
-4. Calls the four component scorers from services/scoring.py.
-5. Computes the composite total_score.
-6. Ranks all symbols by total_score (highest = rank 1).
-7. Assigns watchlist buckets (A / B / C).
-8. Writes rows to daily_rankings (upserts by trade_date + symbol).
-9. Returns the full ranked list as a list of dicts for the API response.
+4. For each symbol, pulls previous-day OHLC levels from daily_levels.
+5. Calls the four component scorers from services/scoring.py.
+6. Computes the composite total_score.
+7. Ranks all symbols by total_score (highest = rank 1).
+8. Assigns watchlist buckets (A / B / C).
+9. Writes rows to daily_rankings (upserts by trade_date + symbol).
+10. Returns the full ranked list as a list of dicts for the API response.
 
 Universe filters:
     "nifty_500"        → in_nifty_500 = True
     "nifty_50"         → in_nifty_50 = True
     "custom_watchlist" → is_custom_watchlist = True
     "all"              → all active symbols
-
-Configuration:
-    event_window_hours: how far back to look for events (default 24h)
-    These defaults can be overridden per call without touching this file.
 """
 
 import datetime
@@ -35,7 +39,7 @@ from typing import Literal, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import delete
 
-from app.models import Symbol, Event, PreopenSnapshot, DailyRanking
+from app.models import Symbol, Event, PreopenSnapshot, DailyLevel, DailyRanking
 from app.services.scoring import (
     compute_catalyst_score,
     compute_preopen_score,
@@ -105,8 +109,7 @@ def _get_snapshots_for_symbol(
 ) -> list[dict]:
     """
     Return pre-open snapshots for a symbol on the given trade_date.
-    Snapshots are identified by snapshot_time falling on that calendar date.
-    Returns a list of plain dicts sorted by snapshot_time ascending.
+    Sorted by snapshot_time ascending.
     """
     date_start = datetime.datetime.combine(trade_date, datetime.time.min)
     date_end = datetime.datetime.combine(trade_date, datetime.time.max)
@@ -135,6 +138,39 @@ def _get_snapshots_for_symbol(
         }
         for r in rows
     ]
+
+
+def _get_levels_for_symbol(
+    symbol: str,
+    db: Session,
+    trade_date: datetime.date,
+) -> Optional[dict]:
+    """
+    Return the daily_levels row for (symbol, trade_date) as a plain dict.
+
+    Returns None if no row exists — the Technical scorer will then fall back
+    to the gap%-based proxy automatically.
+
+    This is a Milestone 3.5 addition.
+    """
+    row = (
+        db.query(DailyLevel)
+        .filter(DailyLevel.symbol == symbol)
+        .filter(DailyLevel.trade_date == trade_date)
+        .first()
+    )
+
+    if row is None:
+        return None
+
+    return {
+        "trade_date": row.trade_date,
+        "symbol": row.symbol,
+        "prev_high": row.prev_high,
+        "prev_low": row.prev_low,
+        "prev_close": row.prev_close,
+        "source": row.source,
+    }
 
 
 def _upsert_daily_ranking(
@@ -197,7 +233,7 @@ def run_scoring(
     Steps:
       1. Resolve trade_date (default = today).
       2. Load active symbols for the chosen universe.
-      3. For each symbol: pull events + snapshots, compute 4 scores.
+      3. For each symbol: pull events + snapshots + levels, compute 4 scores.
       4. Sort all symbols by total_score descending.
       5. Assign rank integers (1 = highest score).
       6. Assign watchlist buckets.
@@ -205,6 +241,9 @@ def run_scoring(
       8. Commit the transaction.
 
     Returns a summary dict with counts and the full ranked list.
+
+    Milestone 3.5 change: step 3 now also fetches daily_levels and passes
+    them to compute_technical_score(). Graceful fallback if levels are absent.
     """
     if trade_date is None:
         trade_date = datetime.date.today()
@@ -216,7 +255,7 @@ def run_scoring(
         trade_date, universe, event_window_hours,
     )
 
-    # ── 1. Load universe ─────────────────────────────────────────────
+    # 1. Load universe
     symbols = _get_universe_symbols(universe=universe, db=db)
     if not symbols:
         logger.warning("No symbols found for universe=%s. Scoring skipped.", universe)
@@ -230,8 +269,9 @@ def run_scoring(
 
     logger.info("Universe loaded: %d symbols.", len(symbols))
 
-    # ── 2. Score each symbol ─────────────────────────────────────────
+    # 2. Score each symbol
     scored_rows = []
+    levels_hit = 0  # track how many symbols had levels available
 
     for sym in symbols:
         ticker = sym.symbol
@@ -239,6 +279,11 @@ def run_scoring(
         # Pull raw data for this symbol
         events = _get_events_for_symbol(ticker, db, since=event_cutoff)
         snapshots = _get_snapshots_for_symbol(ticker, db, trade_date=trade_date)
+
+        # Pull daily levels (Milestone 3.5 — may be None if not loaded)
+        levels = _get_levels_for_symbol(ticker, db, trade_date=trade_date)
+        if levels:
+            levels_hit += 1
 
         # Compute component scores
         catalyst_score, catalyst_detail = compute_catalyst_score(
@@ -255,7 +300,11 @@ def run_scoring(
             }
         )
 
-        technical_score = compute_technical_score(snapshots=snapshots)
+        # Technical score: uses levels when available, gap proxy when not
+        technical_score = compute_technical_score(
+            snapshots=snapshots,
+            levels=levels,
+        )
 
         total_score = compute_total_score(
             catalyst=catalyst_score,
@@ -272,23 +321,27 @@ def run_scoring(
             "liquidity_score": liquidity_score,
             "technical_score": technical_score,
             "total_score": total_score,
-            # rank and bucket assigned after sort below
             "rank": None,
             "watchlist_bucket": None,
-            # extra context for logging / debugging
             "_event_count": catalyst_detail.event_count,
             "_best_impact": catalyst_detail.best_impact,
             "_snapshot_count": len(snapshots),
+            "_levels_used": levels is not None,
         })
 
-    # ── 3. Sort and assign ranks ──────────────────────────────────────
+    logger.info(
+        "Levels used for %d / %d symbols (rest used gap proxy).",
+        levels_hit, len(symbols),
+    )
+
+    # 3. Sort and assign ranks
     scored_rows.sort(key=lambda r: r["total_score"], reverse=True)
 
     for rank_num, row in enumerate(scored_rows, start=1):
         row["rank"] = rank_num
         row["watchlist_bucket"] = assign_bucket(row["total_score"])
 
-    # ── 4. Write to database ──────────────────────────────────────────
+    # 4. Write to database
     for row in scored_rows:
         _upsert_daily_ranking(
             db=db,
@@ -305,14 +358,14 @@ def run_scoring(
 
     db.commit()
 
-    # ── 5. Summary ────────────────────────────────────────────────────
+    # 5. Summary
     a_count = sum(1 for r in scored_rows if r["watchlist_bucket"] == "A")
     b_count = sum(1 for r in scored_rows if r["watchlist_bucket"] == "B")
     c_count = sum(1 for r in scored_rows if r["watchlist_bucket"] == "C")
 
     logger.info(
-        "Scoring complete | %d symbols | A=%d B=%d C=%d",
-        len(scored_rows), a_count, b_count, c_count,
+        "Scoring complete | %d symbols | A=%d B=%d C=%d | levels_used=%d",
+        len(scored_rows), a_count, b_count, c_count, levels_hit,
     )
 
     return {
@@ -320,6 +373,7 @@ def run_scoring(
         "universe": universe,
         "event_window_hours": event_window_hours,
         "symbols_scored": len(scored_rows),
+        "levels_used_count": levels_hit,
         "bucket_counts": {"A": a_count, "B": b_count, "C": c_count},
         "results": [
             {
@@ -335,6 +389,7 @@ def run_scoring(
                 "event_count": r["_event_count"],
                 "best_catalyst_impact": r["_best_impact"],
                 "snapshot_count": r["_snapshot_count"],
+                "levels_used": r["_levels_used"],
             }
             for r in scored_rows
         ],
