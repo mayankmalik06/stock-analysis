@@ -1,0 +1,26 @@
+[
+  {
+    "symbol": "TATAMOTORS",
+    "attchmntText": "Tata Motors board approves JLR refinancing plan and QIP of Rs 3000 Cr",
+    "desc": "Board meeting approval: JLR debt restructuring and QIP fundraise at Rs 745/share",
+    "an_dt": "26-Jun-2026 07:15:00",
+    "attchmntFile": "https://www.nseindia.com/corporate/files/TATA001.pdf",
+    "seq_id": "TATA001"
+  },
+  {
+    "symbol": "ZOMATO",
+    "attchmntText": "Motilal Oswal initiates coverage with BUY, target Rs 280",
+    "desc": "Analyst initiating coverage on Zomato with BUY rating and target price Rs 280 (30% upside). Cites Blinkit expansion.",
+    "an_dt": "26-Jun-2026 08:30:00",
+    "attchmntFile": "",
+    "seq_id": "ZOM001"
+  },
+  {
+    "symbol": "NOTINUNIVERSE",
+    "attchmntText": "Some announcement for symbol not in our universe",
+    "desc": "This should be filtered out.",
+    "an_dt": "26-Jun-2026 09:00:00",
+    "attchmntFile": "",
+    "seq_id": "NUI001"
+  }
+]

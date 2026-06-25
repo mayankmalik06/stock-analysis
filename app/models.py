@@ -198,27 +198,37 @@ class DailyLevel(Base):
         )
 
 
-# -- 5. symbol_events  (NEW — Milestone 4) ------------------------------------
+# -- 5. symbol_events  (UPDATED — Milestone 6) --------------------------------
 class SymbolEvent(Base):
     """
     One row per AI-classified event for a symbol on a specific trade date.
 
-    Populated by scripts/classify_events.py which:
-      1. reads seed events from data/seed_events.json (or live events later),
-      2. calls the LLM event classifier,
-      3. writes the structured result here.
+    Populated by:
+      - scripts/load_announcements.py  -> fetches live NSE announcements, stores
+        rows with event_type=None (pending classification)
+      - scripts/classify_events.py     -> reads pending rows, calls the LLM
+        classifier, updates event_type / sentiment / confidence / label
+
+    Milestone 6 additions (columns added):
+        source        — where the event came from (NSE_ANNOUNCEMENTS or SEED)
+        headline      — short headline text (kept separate from full raw_text)
+        announced_at  — original announcement timestamp from the source feed
 
     The unique constraint on (trade_date, symbol, raw_text_hash) prevents
-    duplicate rows when the classifier script is run multiple times.
+    duplicate rows when the loader or classifier runs multiple times.
 
     Columns:
         trade_date   — the trading date this event relates to
         symbol       — NSE ticker
         raw_text     — the original headline + description sent to the LLM
+        source       — data source tag, e.g. NSE_ANNOUNCEMENTS or SEED
+        headline     — short headline (max 500 chars)
+        announced_at — timestamp of the original announcement
         event_type   — one of: EARNINGS, GUIDANCE, BROKER_RATING, MACRO,
                         CORPORATE_ACTION, FLOW, RISK, GENERAL_NEWS, NO_EVENT
-        sentiment    — POSITIVE, NEGATIVE, or NEUTRAL
-        confidence   — LLM confidence 0.0–1.0
+                        (NULL = pending classification)
+        sentiment    — POSITIVE, NEGATIVE, or NEUTRAL  (NULL = pending)
+        confidence   — LLM confidence 0.0–1.0  (NULL = pending)
         label        — user-facing one-line description of the event
         created_at   — when this row was written
     """
@@ -230,7 +240,12 @@ class SymbolEvent(Base):
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # AI-classified fields
+    # Milestone 6: provenance fields
+    source: Mapped[str] = mapped_column(String(50), nullable=True, default="SEED")
+    headline: Mapped[str] = mapped_column(String(500), nullable=True)
+    announced_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+
+    # AI-classified fields (NULL = not yet classified)
     event_type: Mapped[str] = mapped_column(String(30), nullable=True)
     sentiment: Mapped[str] = mapped_column(String(20), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=True)
@@ -253,9 +268,10 @@ class SymbolEvent(Base):
     )
 
     def __repr__(self) -> str:
+        classified = self.event_type or "PENDING"
         return (
             f"<SymbolEvent {self.trade_date} | {self.symbol} | "
-            f"{self.event_type} | {self.sentiment}>"
+            f"{classified} | {self.sentiment}>"
         )
 
 

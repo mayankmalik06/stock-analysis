@@ -62,7 +62,7 @@ Your task is to write a concise, professional pre-market briefing in Markdown fo
 STRICT RULES:
 1. Write 3 to 6 paragraphs plus bullet lists where helpful.
 2. The brief must be readable in under 2 minutes.
-3. Do NOT invent facts, prices, or catalysts not present in the input data.
+3. Do NOT invent facts, prices, or catalysts not present in the input data. Use the actual headline or label text from event_tags to describe why a stock matters today — quote key phrases directly.
 4. Focus only on what is actionable for an intraday trader.
 5. Use short, direct sentences — this is a briefing, not a research report.
 6. Mention specific score ranges only where they clarify context (e.g. "A-grade catalyst").
@@ -112,12 +112,15 @@ def _build_brief_input(
         bucket = r.get("watchlist_bucket", "C")
         events = events_map.get(symbol, [])
 
-        # Build event tags list
+        # Build event tags list — include headline and source for richer brief
         event_tags = [
             {
                 "event_type": e.get("event_type", "GENERAL_NEWS"),
                 "sentiment": e.get("sentiment", "NEUTRAL"),
-                "label": e.get("label", ""),
+                # Prefer the AI label; fall back to headline if label is empty
+                "label": e.get("label") or e.get("headline", ""),
+                "headline": e.get("headline", ""),
+                "source": e.get("source", "SEED"),
             }
             for e in events
             if e.get("event_type") not in ("NO_EVENT", None)
@@ -288,6 +291,9 @@ def generate_brief(
                 "confidence": row.confidence,
                 "label": row.label,
                 "raw_text": row.raw_text,
+                # Milestone 6: provenance for richer brief text
+                "headline": row.headline or "",
+                "source": row.source or "SEED",
             }
         )
 

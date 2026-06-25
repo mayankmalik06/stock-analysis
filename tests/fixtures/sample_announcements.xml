@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>NSE Online Announcements</title>
+    <link>https://www.nseindia.com</link>
+    <description>NSE Corporate Announcements RSS Feed</description>
+
+    <item>
+      <title>RELIANCE - Board Meeting Outcome: Q4FY26 Results</title>
+      <description>Reliance Industries Q4FY26 results: Net profit up 18% YoY to Rs 19,488 Cr. Revenue grew 12%. Jio ARPU at Rs 198.</description>
+      <link>https://www.nseindia.com/corporate/announcements/REL001</link>
+      <pubDate>Fri, 26 Jun 2026 07:30:00 +0530</pubDate>
+    </item>
+
+    <item>
+      <title>INFY : Quarterly Results — Revenue Guidance Raised</title>
+      <description>Infosys Q1FY27: Revenue guidance raised to 8-10% for FY27. Large deal wins USD 4.1 bn. AI-driven demand strong.</description>
+      <link>https://www.nseindia.com/corporate/announcements/INF001</link>
+      <pubDate>Fri, 26 Jun 2026 08:00:00 +0530</pubDate>
+    </item>
+
+    <item>
+      <title>HDFCBANK - FII Holding Update</title>
+      <description>HDFC Bank FII holding increases to 55.2% from 54.8%. No material corporate announcement.</description>
+      <link>https://www.nseindia.com/corporate/announcements/HDB001</link>
+      <pubDate>Fri, 26 Jun 2026 06:45:00 +0530</pubDate>
+    </item>
+
+    <item>
+      <title>General Notice - Exchange Update</title>
+      <description>This is an exchange-level operational update with no specific symbol. Routine compliance notice.</description>
+      <link>https://www.nseindia.com/corporate/announcements/GEN001</link>
+      <pubDate>Fri, 26 Jun 2026 09:00:00 +0530</pubDate>
+    </item>
+  </channel>
+</rss>

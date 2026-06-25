@@ -97,8 +97,15 @@ def _get_symbol_events_for_symbol(
             "confidence": r.confidence,
             "label": r.label,
             "raw_text": r.raw_text,
+            # Milestone 6: provenance fields
+            "headline": r.headline or "",
+            "source": r.source or "SEED",
+            "announced_at": r.announced_at,
         }
         for r in rows
+        # Skip rows that are still pending classification (event_type = NULL)
+        # so they don't dilute the catalyst score with confidence=None
+        if r.event_type is not None
     ]
 
 
