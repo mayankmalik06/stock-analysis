@@ -198,7 +198,68 @@ class DailyLevel(Base):
         )
 
 
-# -- 5. daily_rankings ---------------------------------------------------------
+# -- 5. symbol_events  (NEW — Milestone 4) ------------------------------------
+class SymbolEvent(Base):
+    """
+    One row per AI-classified event for a symbol on a specific trade date.
+
+    Populated by scripts/classify_events.py which:
+      1. reads seed events from data/seed_events.json (or live events later),
+      2. calls the LLM event classifier,
+      3. writes the structured result here.
+
+    The unique constraint on (trade_date, symbol, raw_text_hash) prevents
+    duplicate rows when the classifier script is run multiple times.
+
+    Columns:
+        trade_date   — the trading date this event relates to
+        symbol       — NSE ticker
+        raw_text     — the original headline + description sent to the LLM
+        event_type   — one of: EARNINGS, GUIDANCE, BROKER_RATING, MACRO,
+                        CORPORATE_ACTION, FLOW, RISK, GENERAL_NEWS, NO_EVENT
+        sentiment    — POSITIVE, NEGATIVE, or NEUTRAL
+        confidence   — LLM confidence 0.0–1.0
+        label        — user-facing one-line description of the event
+        created_at   — when this row was written
+    """
+    __tablename__ = "symbol_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    trade_date: Mapped[datetime.date] = mapped_column(Date, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # AI-classified fields
+    event_type: Mapped[str] = mapped_column(String(30), nullable=True)
+    sentiment: Mapped[str] = mapped_column(String(20), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=True)
+    label: Mapped[str] = mapped_column(String(300), nullable=True)
+
+    # A short hash of raw_text used for the unique constraint
+    # (SQLite TEXT columns are not indexable at a fixed prefix length the same way
+    #  as MySQL, so we store an explicit hash column instead)
+    raw_text_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "trade_date", "symbol", "raw_text_hash",
+            name="uq_symbol_events_date_symbol_hash"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SymbolEvent {self.trade_date} | {self.symbol} | "
+            f"{self.event_type} | {self.sentiment}>"
+        )
+
+
+# -- 6. daily_rankings ---------------------------------------------------------
 class DailyRanking(Base):
     """
     One row per stock per trading day, containing its final score and rank.
@@ -236,7 +297,7 @@ class DailyRanking(Base):
         return f"<DailyRanking {self.trade_date} | {self.symbol} | rank={self.rank} score={self.total_score}>"
 
 
-# -- 6. briefs -----------------------------------------------------------------
+# -- 7. briefs -----------------------------------------------------------------
 class Brief(Base):
     """
     One row per generated morning brief.

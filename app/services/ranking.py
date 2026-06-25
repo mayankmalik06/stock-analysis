@@ -39,9 +39,10 @@ from typing import Literal, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import delete
 
-from app.models import Symbol, Event, PreopenSnapshot, DailyLevel, DailyRanking
+from app.models import Symbol, Event, PreopenSnapshot, DailyLevel, DailyRanking, SymbolEvent
 from app.services.scoring import (
     compute_catalyst_score,
+    compute_events_score,
     compute_preopen_score,
     compute_liquidity_score,
     compute_technical_score,
@@ -68,6 +69,37 @@ def _get_universe_symbols(universe: UniverseType, db: Session) -> list[Symbol]:
     # "all" → no extra filter
 
     return query.all()
+
+
+def _get_symbol_events_for_symbol(
+    symbol: str,
+    db: Session,
+    trade_date: datetime.date,
+) -> list[dict]:
+    """
+    Return AI-classified symbol_events rows for a symbol on trade_date.
+    These are used for events_score (the AI-backed Catalyst component).
+    Returns an empty list if no rows exist — scoring falls back to 0.
+    """
+    rows = (
+        db.query(SymbolEvent)
+        .filter(SymbolEvent.trade_date == trade_date)
+        .filter(SymbolEvent.symbol == symbol)
+        .order_by(SymbolEvent.created_at.asc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "symbol": r.symbol,
+            "event_type": r.event_type,
+            "sentiment": r.sentiment,
+            "confidence": r.confidence,
+            "label": r.label,
+            "raw_text": r.raw_text,
+        }
+        for r in rows
+    ]
 
 
 def _get_events_for_symbol(
@@ -285,11 +317,30 @@ def run_scoring(
         if levels:
             levels_hit += 1
 
+        # Pull AI-classified events from symbol_events (Milestone 4)
+        # If rows exist, events_score replaces the keyword-based catalyst_score.
+        # If no rows exist, falls back to keyword-based catalyst_score.
+        classified_events = _get_symbol_events_for_symbol(ticker, db, trade_date=trade_date)
+
         # Compute component scores
-        catalyst_score, catalyst_detail = compute_catalyst_score(
-            events=events,
-            window_hours=event_window_hours,
-        )
+        if classified_events:
+            # Milestone 4: use AI-backed events_score as the Catalyst component
+            catalyst_score = compute_events_score(classified_events)
+            catalyst_detail = CatalystDetail(
+                symbol=ticker,
+                event_count=len(classified_events),
+                score=catalyst_score,
+            )
+            logger.debug(
+                "events_score for %s: %.1f (from %d AI-classified events)",
+                ticker, catalyst_score, len(classified_events),
+            )
+        else:
+            # Fallback: keyword-based catalyst scoring from M3
+            catalyst_score, catalyst_detail = compute_catalyst_score(
+                events=events,
+                window_hours=event_window_hours,
+            )
 
         preopen_score = compute_preopen_score(snapshots=snapshots)
 
@@ -324,9 +375,11 @@ def run_scoring(
             "rank": None,
             "watchlist_bucket": None,
             "_event_count": catalyst_detail.event_count,
-            "_best_impact": catalyst_detail.best_impact,
+            "_best_impact": getattr(catalyst_detail, "best_impact", "AI"),
             "_snapshot_count": len(snapshots),
             "_levels_used": levels is not None,
+            "_ai_events_used": len(classified_events) > 0,
+            "_classified_event_count": len(classified_events),
         })
 
     logger.info(
@@ -390,6 +443,8 @@ def run_scoring(
                 "best_catalyst_impact": r["_best_impact"],
                 "snapshot_count": r["_snapshot_count"],
                 "levels_used": r["_levels_used"],
+                "ai_events_used": r.get("_ai_events_used", False),
+                "classified_event_count": r.get("_classified_event_count", 0),
             }
             for r in scored_rows
         ],

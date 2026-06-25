@@ -1,0 +1,46 @@
+{
+  "_comment": "Seed events for Milestone 4 testing. Trade date: 2026-06-25. These are realistic synthetic events matching the 8 symbols already seeded by seed_test_data.py.",
+  "trade_date": "2026-06-25",
+  "events": [
+    {
+      "symbol": "RELIANCE",
+      "raw_text": "Reliance Industries Q4FY26 results announced: Net profit up 18% YoY to Rs 19,488 Cr, revenue grew 12% to Rs 2.44 lakh Cr. Jio ARPU improved to Rs 198, Retail segment posted record EBITDA. Beat analyst consensus on all major metrics."
+    },
+    {
+      "symbol": "RELIANCE",
+      "raw_text": "Reliance Industries receives large order win for Jio 5G network expansion worth Rs 5,200 Cr from government broadband scheme. Execution expected over 24 months."
+    },
+    {
+      "symbol": "INFY",
+      "raw_text": "Infosys Q1FY27 quarterly result: Revenue guidance raised to 8-10% for FY27 (from 6-8% earlier). Q1 net profit Rs 6,921 Cr, up 7.4% YoY. Large deal wins of USD 4.1 bn, highest in 5 quarters. Management commentary positive on AI-driven demand."
+    },
+    {
+      "symbol": "TATAMOTORS",
+      "raw_text": "Board meeting approval: Tata Motors board approves JLR refinancing plan, restructuring GBP 2.5 bn debt at lower rates. QIP fundraise of Rs 3,000 Cr approved to reduce net automotive debt."
+    },
+    {
+      "symbol": "TATAMOTORS",
+      "raw_text": "Tata Motors QIP: Company to raise Rs 3,000 Cr via Qualified Institutional Placement at Rs 745 per share. Issue price at 4.5% discount to current market price."
+    },
+    {
+      "symbol": "ADANIENT",
+      "raw_text": "CRISIL upgrades credit rating of Adani Enterprises Ltd from AA- to AA with stable outlook, citing improved leverage ratios and strong cash flows from diversified business segments."
+    },
+    {
+      "symbol": "MOTHERSON",
+      "raw_text": "Motherson Sumi Wiring India Ltd compliance disclosure: General regulatory filing for Q4FY26 annual accounts submitted to NSE and BSE as per SEBI listing obligations."
+    },
+    {
+      "symbol": "ZOMATO",
+      "raw_text": "Motilal Oswal initiates coverage on Zomato Ltd with BUY rating and target price of Rs 280, implying 30% upside. Analyst cites improving unit economics, Blinkit expansion, and market leadership in quick commerce."
+    },
+    {
+      "symbol": "HDFCBANK",
+      "raw_text": "HDFC Bank: FII holding increases to 55.2% from 54.8% in previous quarter, indicating continued foreign institutional interest. No material corporate announcement."
+    },
+    {
+      "symbol": "IRCTC",
+      "raw_text": ""
+    }
+  ]
+}

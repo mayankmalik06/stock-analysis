@@ -99,3 +99,62 @@ class BriefRead(BaseModel):
     top_watchlist_json: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Milestone 4: Morning brief response schemas ───────────────────
+class EventTag(BaseModel):
+    """A single classified event attached to a symbol."""
+    event_type: str
+    sentiment: str
+    label: str
+
+
+class TopSymbol(BaseModel):
+    """One row in the morning brief top board."""
+    rank: int
+    symbol: str
+    bucket: str
+    total_score: Optional[float] = None
+    catalyst_score: Optional[float] = None
+    preopen_score: Optional[float] = None
+    liquidity_score: Optional[float] = None
+    technical_score: Optional[float] = None
+    event_tags: list[EventTag] = []
+
+
+class BriefSections(BaseModel):
+    """Structured sections of the morning brief."""
+    top_board: list[str] = []
+    positive_catalysts: list[str] = []
+    risk_names: list[str] = []
+    noisy_items: list[str] = []
+
+
+class MorningBriefResponse(BaseModel):
+    """
+    Response schema for GET /brief/{trade_date}.
+
+    Fields:
+        trade_date     — the date this brief covers
+        top_symbols    — top 5 symbols with scores + event tags
+        sections       — structured brief sections (catalysts, risks, etc.)
+        rendered_brief — full Markdown brief text ready to display
+    """
+    trade_date: datetime.date
+    top_symbols: list[TopSymbol]
+    sections: BriefSections
+    rendered_brief: str
+
+
+class SymbolEventRead(BaseModel):
+    """Schema for reading a symbol_events row from the API."""
+    id: int
+    trade_date: datetime.date
+    symbol: str
+    event_type: Optional[str] = None
+    sentiment: Optional[str] = None
+    confidence: Optional[float] = None
+    label: Optional[str] = None
+    created_at: Optional[datetime.datetime] = None
+
+    model_config = {"from_attributes": True}

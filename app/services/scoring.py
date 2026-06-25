@@ -115,6 +115,119 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Events score — AI-backed Catalyst scoring (Milestone 4)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Score bands by (event_type, sentiment) combination
+# Each band is (min_score, max_score); we use min_score as the base and
+# let confidence scale toward max_score.
+_EVENT_SCORE_BANDS: dict[tuple[str, str], tuple[float, float]] = {
+    # Strongly positive earnings / guidance / corporate action
+    ("EARNINGS", "POSITIVE"):          (80.0, 100.0),
+    ("GUIDANCE", "POSITIVE"):          (80.0, 100.0),
+    ("CORPORATE_ACTION", "POSITIVE"):  (80.0, 100.0),
+    # Broker upgrade
+    ("BROKER_RATING", "POSITIVE"):     (75.0, 95.0),
+    # Flow events (block/bulk deals, FII buying)
+    ("FLOW", "POSITIVE"):              (65.0, 85.0),
+    # Neutral earnings / guidance
+    ("EARNINGS", "NEUTRAL"):           (45.0, 60.0),
+    ("GUIDANCE", "NEUTRAL"):           (45.0, 60.0),
+    # Macro events (any sentiment)
+    ("MACRO", "POSITIVE"):             (30.0, 50.0),
+    ("MACRO", "NEUTRAL"):              (30.0, 50.0),
+    ("MACRO", "NEGATIVE"):             (30.0, 50.0),
+    # General news (any sentiment)
+    ("GENERAL_NEWS", "POSITIVE"):      (25.0, 45.0),
+    ("GENERAL_NEWS", "NEUTRAL"):       (25.0, 45.0),
+    ("GENERAL_NEWS", "NEGATIVE"):      (25.0, 45.0),
+    # Broker downgrade
+    ("BROKER_RATING", "NEGATIVE"):     (10.0, 30.0),
+    ("BROKER_RATING", "NEUTRAL"):      (20.0, 40.0),
+    # Risk events
+    ("RISK", "NEGATIVE"):              (5.0,  25.0),
+    ("RISK", "NEUTRAL"):               (15.0, 35.0),
+    ("RISK", "POSITIVE"):              (20.0, 40.0),  # risk resolved
+    # Negative earnings / guidance / corporate action
+    ("EARNINGS", "NEGATIVE"):          (5.0,  30.0),
+    ("GUIDANCE", "NEGATIVE"):          (5.0,  30.0),
+    ("CORPORATE_ACTION", "NEGATIVE"):  (10.0, 35.0),
+    # Negative flow (FII selling, large block at discount)
+    ("FLOW", "NEGATIVE"):              (10.0, 30.0),
+    ("FLOW", "NEUTRAL"):               (25.0, 45.0),
+}
+
+_EXTRA_EVENT_BONUS = 5.0   # bonus per additional event of the same tier
+_EXTRA_EVENT_CAP  = 15.0  # maximum total bonus from extra events
+
+
+def compute_events_score(
+    classified_events: list[dict],
+) -> float:
+    """
+    Compute an Events score (0–100) from a list of AI-classified event dicts.
+
+    Each dict should have at minimum:
+        event_type  (str)  — taxonomy code
+        sentiment   (str)  — POSITIVE / NEGATIVE / NEUTRAL
+        confidence  (float) — 0.0 to 1.0
+
+    Score logic:
+        1. For each event, look up the score band from _EVENT_SCORE_BANDS.
+        2. Interpolate within the band using confidence:
+               score = min_score + (max_score - min_score) * confidence
+        3. Pick the highest single event score as the base score.
+        4. Add _EXTRA_EVENT_BONUS for each additional event of the same tier
+           as the best event (capped at _EXTRA_EVENT_CAP total bonus).
+        5. Return 0.0 if there are no events or all are NO_EVENT.
+    """
+    if not classified_events:
+        return 0.0
+
+    # Filter out NO_EVENT entries
+    real_events = [
+        e for e in classified_events
+        if e.get("event_type") not in ("NO_EVENT", None)
+    ]
+    if not real_events:
+        return 0.0
+
+    # Score each event
+    scored = []
+    for ev in real_events:
+        etype = str(ev.get("event_type", "GENERAL_NEWS")).upper()
+        sentiment = str(ev.get("sentiment", "NEUTRAL")).upper()
+        confidence = float(ev.get("confidence", 0.5))
+        confidence = max(0.0, min(1.0, confidence))
+
+        band = _EVENT_SCORE_BANDS.get(
+            (etype, sentiment),
+            (25.0, 45.0),  # default: treat as GENERAL_NEWS NEUTRAL
+        )
+        band_min, band_max = band
+        raw_score = band_min + (band_max - band_min) * confidence
+        scored.append({
+            "event_type": etype,
+            "sentiment": sentiment,
+            "raw_score": raw_score,
+        })
+
+    # Best single event
+    scored.sort(key=lambda x: x["raw_score"], reverse=True)
+    best = scored[0]
+    base_score = best["raw_score"]
+
+    # Count additional events of the same tier (same event_type + sentiment)
+    same_tier_extras = sum(
+        1 for s in scored[1:]
+        if s["event_type"] == best["event_type"] and s["sentiment"] == best["sentiment"]
+    )
+    bonus = min(same_tier_extras * _EXTRA_EVENT_BONUS, _EXTRA_EVENT_CAP)
+
+    final_score = min(base_score + bonus, 100.0)
+    return round(final_score, 2)
+
 logger = logging.getLogger(__name__)
 
 

@@ -40,3 +40,6 @@ pydantic-settings==2.3.0
 # Testing
 pytest==9.1.1
 pytest-asyncio==1.4.0
+
+# LLM API client (Milestone 4)
+openai==1.35.3

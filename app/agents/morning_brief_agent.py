@@ -1,27 +1,11 @@
 """
 app/agents/morning_brief_agent.py
 
-AI brief writer — generates the final pre-market morning brief.
+Backward-compatibility shim.
+The real implementation lives in app/ai/morning_brief.py (Milestone 4).
 
-MILESTONE: 4 (AI Layer)
-STATUS: Stub — implementation coming in Milestone 4.
-
-Responsibilities:
-- Receive structured inputs (ranked list, catalysts, pre-open data).
-- Call LLM API with a structured prompt.
-- Return the brief as Markdown text.
-- The brief includes: market context, top 5 watchlist, secondary list, risk flags.
-
-Rules:
-- AI explains the ranked list. AI does NOT produce the ranked list.
-- All AI inputs must be structured and auditable.
-- Never allow AI to override scores set by the scoring engine.
+Import from app.ai.morning_brief in new code.
 """
+from app.ai.morning_brief import generate_brief  # noqa: F401
 
-
-def generate_morning_brief(brief_inputs: dict) -> str:
-    """
-    Generate the morning brief Markdown from structured inputs.
-    Returns a Markdown string ready to send to Telegram.
-    """
-    raise NotImplementedError("Morning brief agent will be implemented in Milestone 4.")
+__all__ = ["generate_brief"]
