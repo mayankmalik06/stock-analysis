@@ -299,3 +299,188 @@ See `.env.example` for the full list. Key variables:
 | `LLM_API_KEY` | API key for the LLM (used in Milestone 4) |
 | `APP_ENV` | Set to `development` locally, `production` on server |
 | `LOG_LEVEL` | Set to `DEBUG` for verbose logs, `INFO` for normal |
+| `DATA_MODE` | `simulated` (default) or `live` — controls EOD and pre-open data source (new M5) |
+
+---
+
+## Milestone 5 — Live NSE Data Integration
+
+Milestone 5 replaces the seed/approximation flows with real NSE data
+for daily OHLC levels and pre-open prices.
+
+### What changed in Milestone 5
+
+| Component | Before M5 | After M5 |
+|---|---|---|
+| `load_daily_levels.py` | `--mode preopen` (approximated from pre-open snapshots) | Added `--mode bhavcopy` (real NSE EOD CSV) |
+| Pre-open snapshots | `run_preopen.py --test` (with mock fallback) | `load_preopen_live.py --force` (live NSE API) |
+| Config | No data mode switch | `DATA_MODE=simulated` or `DATA_MODE=live` |
+| New file | — | `app/collectors/nse_bhavcopy.py` |
+| New script | — | `scripts/load_preopen_live.py` |
+
+All previous modes (`seed`, `preopen`, mock pre-open) still work. Milestone 5
+only **adds** a live path — nothing is removed.
+
+---
+
+### Bhavcopy data source
+
+**URL:** `https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_DDMMYYYY.csv`
+
+For example, for the session of 24 June 2026:
+```
+https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_24062026.csv
+```
+
+- Format: plain CSV, no login required, available after ~6 pm on the session date.
+- Fallback: if the plain CSV is unavailable, the collector tries the zipped new-format
+  bhavcopy at `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_YYYYMMDD_F_0000.csv.zip`.
+- Columns used: `SYMBOL`, `HIGH_PRICE`, `LOW_PRICE`, `CLOSE_PRICE` (EQ series only).
+
+---
+
+### Pre-open live script
+
+`scripts/load_preopen_live.py` fetches the same NSE pre-open API endpoint used
+by the existing collector, but adds:
+- Explicit `--date` parameter.
+- `--force` flag to run outside market hours (for dry-runs).
+- `--session` flag to run continuous polling for the full 9:00–9:15 am window.
+
+---
+
+### DATA_MODE configuration
+
+Set `DATA_MODE` in your `.env` file or as an environment variable before running scripts:
+
+```bash
+# Default — uses seed/approximation flows, no internet required
+DATA_MODE=simulated
+
+# Live — uses real NSE bhavcopy and live pre-open API
+DATA_MODE=live
+```
+
+The `DATA_MODE` variable only changes the **default** mode. You can always pass
+`--mode` explicitly to override:
+
+```bash
+# This always uses bhavcopy regardless of DATA_MODE
+python scripts/load_daily_levels.py --date 2026-06-25 --mode bhavcopy
+```
+
+---
+
+### Live morning run — step-by-step
+
+Use this workflow on a real trading day (e.g. Friday 2026-06-26):
+
+```bash
+export DATA_MODE=live
+
+# Step 1: Load yesterday's EOD bhavcopy (2026-06-25) as "previous day" levels
+# Run this after ~6 pm on 2026-06-25, or any time on 2026-06-26 morning
+python scripts/load_daily_levels.py --date 2026-06-25 --mode bhavcopy
+
+# Step 2: Fetch today's pre-open data (run during 9:00–9:15 am IST)
+python scripts/load_preopen_live.py --date 2026-06-26
+
+# --- OR if you want to test outside market hours ---
+python scripts/load_preopen_live.py --date 2026-06-26 --force
+
+# Step 3: Run scoring for today
+python scripts/run_scoring.py --date 2026-06-26
+
+# Step 4: Classify events (seed events for now)
+python scripts/classify_events.py --date 2026-06-26
+
+# Step 5: Generate and save the morning brief
+python scripts/run_morning_brief.py --date 2026-06-26 --save
+```
+
+---
+
+### Simulated / offline run (tests and offline use)
+
+```bash
+export DATA_MODE=simulated
+
+# Load seed levels (no network)
+python scripts/load_daily_levels.py --date 2026-06-25 --mode seed
+
+# Fetch pre-open using mock data
+python scripts/run_preopen.py --test
+
+# Run scoring
+python scripts/run_scoring.py --date 2026-06-26
+```
+
+---
+
+### Manual verification checklist (Milestone 5)
+
+After setting `DATA_MODE=live`, run these checks manually on your machine:
+
+1. **Bhavcopy download check**
+
+   ```bash
+   python scripts/load_daily_levels.py --date 2026-06-24 --mode bhavcopy
+   ```
+   Expected: see `Rows written: N` (N > 0). Source = `NSE_BHAVCOPY`.
+
+   Verify in SQLite:
+   ```sql
+   SELECT symbol, prev_high, prev_low, prev_close, source
+   FROM daily_levels
+   WHERE trade_date = '2026-06-24'
+   LIMIT 10;
+   ```
+
+2. **Live pre-open check** (run during 9:00–9:15 am IST on a trading day)
+
+   ```bash
+   python scripts/load_preopen_live.py --date 2026-06-26
+   ```
+   Or outside market hours:
+   ```bash
+   python scripts/load_preopen_live.py --date 2026-06-26 --force
+   ```
+   Expected: see `Rows saved: N`. Source = `live_nse`.
+
+3. **Full pipeline check**
+
+   ```bash
+   python scripts/load_daily_levels.py --date 2026-06-24 --mode bhavcopy
+   python scripts/run_preopen.py --test
+   python scripts/run_scoring.py --date 2026-06-25
+   python scripts/run_morning_brief.py --date 2026-06-25
+   ```
+
+4. **Test suite check**
+
+   ```bash
+   pytest tests/ -v
+   ```
+   All tests should pass, including `test_bhavcopy.py` and `test_preopen_live.py`.
+
+---
+
+### Updated project tree (Milestone 5)
+
+```
+scripts/
+  load_daily_levels.py  ← Updated: added --mode bhavcopy, DATA_MODE support
+  load_preopen_live.py  ← NEW: live pre-open fetcher
+
+app/
+  collectors/
+    nse_bhavcopy.py     ← NEW: bhavcopy HTTP client and CSV parser
+
+tests/
+  test_bhavcopy.py      ← NEW: offline unit tests for bhavcopy collector
+  test_preopen_live.py  ← NEW: offline unit tests for live pre-open script
+
+.env.example            ← Updated: added DATA_MODE variable
+app/config.py           ← Updated: added data_mode setting
+README.md               ← Updated: Milestone 5 live run docs
+```

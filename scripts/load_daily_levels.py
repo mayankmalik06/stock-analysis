@@ -2,21 +2,25 @@
 """
 scripts/load_daily_levels.py
 
-Milestone 3.5 — CLI script to load previous-day OHLC levels into daily_levels.
+Milestone 3.5 / 5 — CLI script to load previous-day OHLC levels into daily_levels.
 
 For a given trade_date (e.g. 2026-06-25), this script fetches or approximates
 the previous trading session's high, low, and close for all active symbols in
 the chosen universe, then writes them into the daily_levels table.
 
 Usage examples:
-    # Load levels for a specific date (most common usage)
-    python scripts/load_daily_levels.py --date 2026-06-25
-
-    # Load for today
-    python scripts/load_daily_levels.py
-
     # Seed deterministic test data (no network call — safe for local testing)
     python scripts/load_daily_levels.py --date 2026-06-25 --mode seed
+
+    # Derive levels from existing preopen_snapshots (offline approximation)
+    python scripts/load_daily_levels.py --date 2026-06-25 --mode preopen
+
+    # [MILESTONE 5 — LIVE] Download real NSE EOD bhavcopy for the given date
+    python scripts/load_daily_levels.py --date 2026-06-25 --mode bhavcopy
+
+    # Live mode respects DATA_MODE env var (set DATA_MODE=live to default to bhavcopy)
+    export DATA_MODE=live
+    python scripts/load_daily_levels.py --date 2026-06-25
 
     # Load levels for Nifty 50 universe only
     python scripts/load_daily_levels.py --date 2026-06-25 --universe nifty_50
@@ -25,26 +29,30 @@ Usage examples:
     python scripts/load_daily_levels.py --date 2026-06-25 --universe custom_watchlist
 
 Run from the project root:
-    python scripts/load_daily_levels.py --date 2026-06-25
+    python scripts/load_daily_levels.py --date 2026-06-25 --mode bhavcopy
 
 ------------------------------------------------------------
-Data source note (Phase 1)
+Data source note (Milestone 5)
 ------------------------------------------------------------
-NSE does not provide a simple public REST endpoint for historical OHLC.
-The pre-open collector already stores prev_close in preopen_snapshots.
+Mode "bhavcopy" (NEW — Milestone 5):
+  Downloads the official NSE EOD equities bhavcopy CSV for the given date.
+  URL: https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_DDMMYYYY.csv
+  Parses SYMBOL, HIGH_PRICE, LOW_PRICE, CLOSE_PRICE (EQ series only).
+  Falls back to a zipped alternate URL if the plain CSV is not available.
+  Source tag: "NSE_BHAVCOPY"
 
-Phase 1 approach:
-  - Mode "preopen" (default): derive prev_high/low from existing preopen_snapshots
-    using prev_close as a proxy. We estimate a plausible high/low range using
-    a fixed percentage band around prev_close (e.g. +/-1.5% as a conservative
-    stand-in for the actual day's range).
-    This is a deliberate Phase 1 approximation.
-    TODO: Replace with real NSE EOD OHLC data in Phase 2.
+Mode "preopen" (original):
+  Derives prev_high/low from existing preopen_snapshots using a fixed ±1.5% band.
+  Source tag: "PREOPEN_DERIVED"
 
-  - Mode "seed": inserts deterministic test rows using a simple formula.
-    Useful for running tests and demos without network access.
+Mode "seed":
+  Inserts deterministic test rows — no network call required.
+  Source tag: "SEED"
 
-  In both cases, the source column in daily_levels records exactly what was used.
+DATA_MODE env var:
+  DATA_MODE=live    → --mode defaults to bhavcopy
+  DATA_MODE=simulated (default) → --mode defaults to preopen
+  An explicit --mode flag always overrides DATA_MODE.
 
 ------------------------------------------------------------
 Upsert behaviour
@@ -65,6 +73,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.db import SessionLocal, create_tables
 from app.models import Symbol, PreopenSnapshot, DailyLevel
+from app.collectors.nse_bhavcopy import fetch_bhavcopy, BhavcopyCopyError
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
@@ -91,15 +100,20 @@ def parse_args():
         choices=["nifty_500", "nifty_50", "custom_watchlist", "all"],
         help="Symbol universe to load levels for. Default: all active symbols.",
     )
+    # Determine default mode from DATA_MODE env var
+    data_mode_env = os.environ.get("DATA_MODE", "simulated").lower()
+    default_mode = "bhavcopy" if data_mode_env == "live" else "preopen"
+
     parser.add_argument(
         "--mode",
         type=str,
-        default="preopen",
-        choices=["preopen", "seed"],
+        default=default_mode,
+        choices=["preopen", "seed", "bhavcopy"],
         help=(
             "Data source mode.\n"
-            "  preopen: derive from existing preopen_snapshots (default).\n"
-            "  seed:    insert deterministic test data — no network call."
+            "  preopen:  derive from existing preopen_snapshots (default when DATA_MODE=simulated).\n"
+            "  seed:     insert deterministic test data — no network call.\n"
+            "  bhavcopy: download real NSE EOD bhavcopy CSV (default when DATA_MODE=live)."
         ),
     )
     return parser.parse_args()
@@ -227,6 +241,68 @@ def load_seed_data(db, symbols: list[Symbol], trade_date: datetime.date) -> list
 
 
 # ---------------------------------------------------------------------------
+# Mode: real NSE EOD bhavcopy (Milestone 5)
+# ---------------------------------------------------------------------------
+
+def load_from_bhavcopy(
+    db, symbols: list[Symbol], trade_date: datetime.date
+) -> list[dict]:
+    """
+    Download the official NSE EOD bhavcopy CSV for trade_date and extract
+    prev_high, prev_low, prev_close for each symbol in the universe.
+
+    The bhavcopy date == trade_date (the session we just finished).
+    For a pre-market run on DAY+1, pass trade_date = DAY.
+
+    Missing symbols (not in bhavcopy) are logged as warnings and skipped.
+    Source tag: "NSE_BHAVCOPY"
+    """
+    universe_tickers = {sym.symbol for sym in symbols}
+
+    try:
+        bhavcopy_rows = fetch_bhavcopy(
+            date=trade_date,
+            universe_symbols=universe_tickers,
+        )
+    except BhavcopyCopyError as exc:
+        logger.error("Bhavcopy download failed: %s", exc)
+        logger.error(
+            "Is %s a trading day? Check https://www.nseindia.com/all-reports",
+            trade_date,
+        )
+        return []
+
+    # Build a quick lookup: symbol -> bhavcopy row
+    bhavcopy_map = {row["symbol"]: row for row in bhavcopy_rows}
+
+    levels = []
+    missing = []
+    for sym in symbols:
+        ticker = sym.symbol
+        if ticker in bhavcopy_map:
+            row = bhavcopy_map[ticker]
+            levels.append({
+                "trade_date": trade_date,
+                "symbol":     ticker,
+                "prev_high":  row["prev_high"],
+                "prev_low":   row["prev_low"],
+                "prev_close": row["prev_close"],
+                "source":     "NSE_BHAVCOPY",
+            })
+        else:
+            missing.append(ticker)
+
+    if missing:
+        logger.warning(
+            "%d symbol(s) not found in bhavcopy: %s",
+            len(missing),
+            ", ".join(missing[:10]) + (" ..." if len(missing) > 10 else ""),
+        )
+
+    return levels
+
+
+# ---------------------------------------------------------------------------
 # Upsert into daily_levels
 # ---------------------------------------------------------------------------
 
@@ -287,12 +363,15 @@ def main():
     else:
         trade_date = datetime.date.today()
 
+    data_mode_env = os.environ.get("DATA_MODE", "simulated")
+
     print(f"\n{'='*60}")
-    print(f"  Milestone 3.5 — Load Daily Levels")
+    print(f"  Milestone 3.5/5 — Load Daily Levels")
     print(f"{'='*60}")
     print(f"  Trade date : {trade_date}")
     print(f"  Universe   : {args.universe}")
     print(f"  Mode       : {args.mode}")
+    print(f"  DATA_MODE  : {data_mode_env}")
     print(f"{'='*60}\n")
 
     # Ensure tables exist (creates daily_levels if missing)
@@ -309,7 +388,9 @@ def main():
             sys.exit(0)
 
         # Build levels from the chosen mode
-        if args.mode == "preopen":
+        if args.mode == "bhavcopy":
+            levels = load_from_bhavcopy(db, symbols, trade_date)
+        elif args.mode == "preopen":
             levels = load_from_preopen(db, symbols, trade_date)
         else:
             levels = load_seed_data(db, symbols, trade_date)

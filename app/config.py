@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Scheduler timezone
     scheduler_timezone: str = "Asia/Kolkata"
 
+    # Milestone 5 — Data mode switch
+    # "simulated" (default): use seed/preopen flows — no network calls needed.
+    # "live": use real NSE bhavcopy + live pre-open fetcher.
+    # Can be overridden at runtime with: export DATA_MODE=live
+    data_mode: str = "simulated"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
